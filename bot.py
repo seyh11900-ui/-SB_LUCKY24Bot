@@ -1,126 +1,140 @@
 import os
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    CallbackQueryHandler,
-    ContextTypes,
-)
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-# កំណត់ Logging
+# Enable logging
 logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# ទាញយក BOT_TOKEN ពី Environment
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+# Load environment variables (Railway provides PORT and token configurations)
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))  # Set your Telegram user ID here for admin actions
 
+# Simple in-memory user subscription database simulation (Use PostgreSQL/MongoDB for production)
+subscribers = set()
 
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """មុខងារសម្រាប់បញ្ជា /start"""
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Send a welcome message with subscription options and main menu."""
+    user = update.effective_user
     keyboard = [
-        [InlineKeyboardButton("⭐ កញ្ចប់សេវាកម្ម (Subscriptions)", callback_data="menu_subscription")],
-        [InlineKeyboardButton("💵 ឧបត្ថម្ភ / Tip Us", callback_data="menu_tips")],
+        [InlineKeyboardButton("⚽ View Today's Free Tips", callback_data="free_tips")],
+        [InlineKeyboardButton("⭐ VIP Subscription Plans", callback_data="vip_plans")],
+        [InlineKeyboardButton("👤 My Account Status", callback_data="account_status")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await update.message.reply_text(
-        "👋 **សូមស្វាគមន៍!**\n\nសូមជ្រើសរើសជម្រើសខាងក្រោម ដើម្បីមើលកញ្ចប់សេវាកម្ម ឬឧបត្ថម្ភដល់យើងខ្ញុំ៖",
-        reply_markup=reply_markup,
-        parse_mode="Markdown",
+    
+    welcome_text = (
+        f"Hello, <b>{user.first_name}</b>! 👋\n\n"
+        "Welcome to the <b>Pro Football Tips Bot</b>.\n"
+        "Get daily high-accuracy match predictions, analysis, and VIP accumulator slips.\n\n"
+        "Choose an option below:"
     )
+    await update.message.reply_html(welcome_text, reply_markup=reply_markup)
 
-
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """មុខងារសម្រាប់ចុចប៊ូតុង Inline Keyboard"""
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle inline keyboard button clicks."""
     query = update.callback_query
     await query.answer()
+    
+    user_id = query.from_user.id
 
-    data = query.data
+    if query.data == "free_tips":
+        tips_text = (
+            "<b>⚽ Today's Free Football Tips:</b>\n\n"
+            "1️⃣ <b>Premier League</b>\n"
+            "Match: Arsenal vs. Chelsea\n"
+            "Tip: Both Teams to Score (BTTS) @ 1.75\n"
+            "Confidence: 🟢🟢🟢⚪⚪ (3/5)\n\n"
+            "2️⃣ <b>La Liga</b>\n"
+            "Match: Real Madrid vs. Valencia\n"
+            "Tip: Real Madrid to Win & Over 1.5 @ 1.60\n"
+            "Confidence: 🟢🟢🟢🟢⚪ (4/5)"
+        )
+        keyboard = [[InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")]]
+        await query.edit_message_text(text=tips_text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
 
-    # --- ម៉ឺនុយមេ ---
-    if data == "menu_subscription":
+    elif query.data == "vip_plans":
+        vip_text = (
+            "<b>⭐ VIP Subscription Packages:</b>\n\n"
+            "Unlock daily VIP slips, 90+ accuracy accumulator codes, and live insider updates!\n\n"
+            "• <b>1 Week Pass:</b> $10\n"
+            "• <b>1 Month Pass:</b> $30 <i>(Best Value)</i>\n"
+            "• <b>Season Pass:</b> $120\n\n"
+            "To subscribe, click below to contact management and complete payment:"
+        )
         keyboard = [
-            [InlineKeyboardButton("🥉 ប្រចាំខែ - $5/ខែ", callback_data="sub_monthly")],
-            [InlineKeyboardButton("🥇 ប្រចាំឆ្នាំ - $50/ឆ្នាំ (ចំណេញ 17%)", callback_data="sub_yearly")],
-            [InlineKeyboardButton("🔙 ម៉ឺនុយដើម", callback_data="menu_main")],
+            [InlineKeyboardButton("💳 Pay / Subscribe Now", url="https://t.me/YourAdminUsername")],
+            [InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")]
         ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(
-            "⭐ **សូមជ្រើសរើសកញ្ចប់សេវាកម្ម (Subscription):**\n\nដើម្បីទទួលបានសិទ្ធិប្រើប្រាស់ពេញលេញ និងមុខងារពិសេសៗ។",
-            reply_markup=reply_markup,
-            parse_mode="Markdown",
-        )
+        await query.edit_message_text(text=vip_text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
 
-    elif data == "menu_tips":
+    elif query.data == "account_status":
+        is_vip = user_id in subscribers
+        status_str = "⭐ VIP Member (Active)" if is_vip else "🆓 Free Tier User"
+        account_text = (
+            f"<b>👤 Account Information:</b>\n\n"
+            f"• <b>User ID:</b> <code>{user_id}</code>\n"
+            f"• <b>Status:</b> {status_str}\n\n"
+            f"<i>Upgrade to VIP to access exclusive picks!</i>"
+        )
+        keyboard = [[InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")]]
+        await query.edit_message_text(text=account_text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif query.data == "main_menu":
         keyboard = [
-            [InlineKeyboardButton("☕ Tip $1", callback_data="tip_1")],
-            [InlineKeyboardButton("🍕 Tip $5", callback_data="tip_5")],
-            [InlineKeyboardButton("🚀 Tip $10", callback_data="tip_10")],
-            [InlineKeyboardButton("🔙 ម៉ឺនុយដើម", callback_data="menu_main")],
+            [InlineKeyboardButton("⚽ View Today's Free Tips", callback_data="free_tips")],
+            [InlineKeyboardButton("⭐ VIP Subscription Plans", callback_data="vip_plans")],
+            [InlineKeyboardButton("👤 My Account Status", callback_data="account_status")]
         ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(
-            "💵 **សូមជ្រើសរើសទំហំទឹកប្រាក់ឧបត្ថម្ភ (Tip):**\n\nសូមអរគុណសម្រាប់ការគាំទ្រដល់ការអភិវឌ្ឍន៍របស់យើងខ្ញុំ!",
-            reply_markup=reply_markup,
-            parse_mode="Markdown",
+            text="<b>Main Menu:</b> Choose an option below:",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
-    # --- ឆ្លើយតបពេលជ្រើសរើស SUB ---
-    elif data in ["sub_monthly", "sub_yearly"]:
-        plan = "ប្រចាំខែ ($5)" if data == "sub_monthly" else "ប្រចាំឆ្នាំ ($50)"
-        keyboard = [[InlineKeyboardButton("🔙 ត្រឡប់ទៅកញ្ចប់សេវាកម្ម", callback_data="menu_subscription")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(
-            f"✅ **អ្នកបានជ្រើសរើស៖** {plan}\n\n"
-            f"💳 *ដើម្បីបន្តការទូទាត់ប្រាក់ សូមទាក់ទងផ្នែកគាំទ្រ ឬធ្វើការទូទាត់តាមតំណភ្ជាប់ (Payment Link)។*",
-            reply_markup=reply_markup,
-            parse_mode="Markdown",
-        )
-
-    # --- ឆ្លើយតបពេលជ្រើសរើស TIP ---
-    elif data.startswith("tip_"):
-        amount = data.split("_")[1]
-        keyboard = [[InlineKeyboardButton("🔙 ត្រឡប់ទៅការឧបត្ថម្ភ", callback_data="menu_tips")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(
-            f"💖 **សូមអរគុណសម្រាប់ការឧបត្ថម្ភចំនួន ${amount}!**\n\n"
-            f"សូមបន្តធ្វើការទូទាត់ប្រាក់ដើម្បីបន្តការគាំទ្ររបស់អ្នក។",
-            reply_markup=reply_markup,
-            parse_mode="Markdown",
-        )
-
-    # --- ត្រឡប់ទៅម៉ឺនុយមេ ---
-    elif data == "menu_main":
-        keyboard = [
-            [InlineKeyboardButton("⭐ កញ្ចប់សេវាកម្ម (Subscriptions)", callback_data="menu_subscription")],
-            [InlineKeyboardButton("💵 ឧបត្ថម្ភ / Tip Us", callback_data="menu_tips")],
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(
-            "👋 **សូមស្វាគមន៍!**\n\nសូមជ្រើសរើសជម្រើសខាងក្រោម ដើម្បីមើលកញ្ចប់សេវាកម្ម ឬឧបត្ថម្ភដល់យើងខ្ញុំ៖",
-            reply_markup=reply_markup,
-            parse_mode="Markdown",
-        )
-
-
-def main():
-    if not BOT_TOKEN:
-        logger.error("មិនទាន់កំណត់ BOT_TOKEN ក្នុង Environment Variables ទេ!")
+async def grant_vip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin command to grant VIP access: /grant <user_id>"""
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("⛔ You are not authorized to use this command.")
         return
 
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    if not context.args:
+        await update.message.reply_text("Usage: /grant [telegram_user_id]")
+        return
 
-    # Handlers
-    app.add_handler(CommandHandler("start", start_command))
-    app.add_handler(CallbackQueryHandler(button_handler))
+    try:
+        target_id = int(context.args[0])
+        subscribers.add(target_id)
+        await update.message.reply_text(f"✅ Successfully granted VIP access to user {target_id}.")
+        
+        # Optionally notify the user
+        await context.bot.send_message(
+            chat_id=target_id,
+            text="🎉 <b>Your VIP Subscription has been activated!</b> Check back to access VIP areas.",
+            parse_mode="HTML"
+        )
+    except ValueError:
+        await update.message.reply_text("❌ Invalid User ID format. Must be an integer.")
 
-    logger.info("Bot កំពុងដំណើរការ...")
-    app.run_polling()
+def main() -> None:
+    """Start the bot."""
+    if not TOKEN:
+        logger.error("No TELEGRAM_BOT_TOKEN environment variable found!")
+        return
 
+    application = Application.builder().token(TOKEN).build()
+
+    # Register handlers
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("grant", grant_vip))
+    application.add_handler(CallbackQueryHandler(button_handler))
+
+    # Start polling
+    logger.info("Bot is starting up...")
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
     main()
